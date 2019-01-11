@@ -1,10 +1,10 @@
 {
   "name": "purescript-express-passport",
   "license": "MIT",
-  //"repository": {
-  //  "type": "git",
-  //  "url": "git://github.com/aykl/purescript-express-passport.git"
-  //},
+  "repository": {
+    "type": "git",
+    "url": "git://github.com/aykl/purescript-express-passport.git"
+  },
   "ignore": [
     "**/.*",
     "node_modules",
