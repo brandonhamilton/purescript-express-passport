@@ -40,31 +40,30 @@ module Node.Express.Passport
   where
 
 import Prelude
-import Control.Monad.Aff (Aff, runAff)
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Class (liftEff)
-import Control.Monad.Eff.Exception (Error)
+import Effect (Effect)
+import Effect.Aff (Aff, runAff_)
+import Effect.Class (liftEffect)
+import Effect.Exception (Error)
 import Data.Argonaut (Json)
-import Data.Foreign (Foreign, toForeign)
+import Data.Either (either)
 import Data.Function.Uncurried (Fn1, Fn2, Fn3, Fn4, mkFn3, mkFn4, runFn1, runFn2, runFn3, runFn4)
 import Data.Maybe (Maybe(..))
 import Data.Nullable (Nullable, toMaybe, toNullable)
+import Foreign (Foreign, unsafeToForeign)
 import Node.Express.Handler (HandlerM(..), Handler, runHandlerM)
-import Node.Express.Passport.Common (PASSPORT, Passport)
-import Node.Express.Types (ExpressM, Request, Response)
+import Node.Express.Passport.Common (Passport)
+import Node.Express.Types (Request, Response)
 import Unsafe.Coerce (unsafeCoerce)
 
 
-foreign import _getPassport :: forall user eff.
-                            Eff (passport :: PASSPORT user | eff) Passport
+foreign import _getPassport :: Effect Passport
 
 -- | Initialize and obtain a Passport singleton instance
-getPassport :: forall user eff. Eff (passport :: PASSPORT user | eff) Passport
+getPassport :: Effect Passport
 getPassport = _getPassport
 
 
-type PassportInitializeMiddleware =
-  forall eff. Fn3 Request Response (ExpressM eff Unit) (ExpressM eff Unit)
+type PassportInitializeMiddleware = Fn3 Request Response (Effect Unit) (Effect Unit)
 -- | Type of options for `passport.initialize(options);` call
 type PassportInitializeOptions = { userProperty :: String }
 
@@ -73,87 +72,76 @@ type PassportInitializeOptions = { userProperty :: String }
 passportInitializeOptions :: PassportInitializeOptions
 passportInitializeOptions = { userProperty: "user" }
 
-foreign import _passportInitialize  :: forall user eff.
-                                    Fn2
-                                      Passport
-                                      PassportInitializeOptions
-                                      (Eff (passport :: PASSPORT user | eff) PassportInitializeMiddleware)
+foreign import _passportInitialize  :: Fn2 Passport PassportInitializeOptions
+                                        (Effect PassportInitializeMiddleware)
 
 -- | Binding for `passport.initialize(options);` call
-passportInitialize  :: forall user eff.
+passportInitialize  ::
                     Passport
                     -> PassportInitializeOptions
-                    -> Eff (passport :: PASSPORT user | eff) PassportInitializeMiddleware
+                    -> Effect PassportInitializeMiddleware
 passportInitialize = runFn2 _passportInitialize
 
 -- | Binding for `passport.initialize(options);` with default options
-passportInitialize' :: forall user eff.
+passportInitialize' ::
                     Passport
-                    -> Eff (passport :: PASSPORT user | eff) PassportInitializeMiddleware
+                    -> Effect PassportInitializeMiddleware
 passportInitialize' passport = passportInitialize passport passportInitializeOptions
 
 
-type PassportSessionMiddleware =
-  forall eff. Fn3 Request Response (ExpressM eff Unit) (ExpressM eff Unit)
+type PassportSessionMiddleware = Fn3 Request Response (Effect Unit) (Effect Unit)
 -- | Type of options for `passport.session(options);` call
 type PassportSessionOptions = { pauseStream :: Boolean }
 
-foreign import _passportSession :: forall user eff.
-                                Fn2
-                                  Passport
-                                  PassportSessionOptions
-                                  (Eff (passport :: PASSPORT user | eff) PassportSessionMiddleware)
+foreign import _passportSession :: Fn2
+                                      Passport
+                                      PassportSessionOptions
+                                      (Effect PassportSessionMiddleware)
 
 -- | Default options for `passport.session(options);` call
 passportSessionOptions :: PassportSessionOptions
 passportSessionOptions = { pauseStream: false }
 
 -- | Binding for `passport.session(options);` call
-passportSession  :: forall user eff.
-                    Passport
+passportSession  :: Passport
                     -> PassportSessionOptions
-                    -> Eff (passport :: PASSPORT user | eff) PassportSessionMiddleware
+                    -> Effect PassportSessionMiddleware
 passportSession = runFn2 _passportSession
 
 -- | Binding for `passport.session(options); with default options
-passportSession' :: forall user eff.
-                    Passport
-                    -> Eff (passport :: PASSPORT user | eff) PassportSessionMiddleware
+passportSession' :: Passport
+                    -> Effect PassportSessionMiddleware
 passportSession' passport = passportSession passport passportSessionOptions
 
 
-type UserSerializedImpl eff =
-  Fn2 (Nullable Error) (Nullable Json) (Eff eff Unit)
-type SerializeUserImpl user eff =
-  Fn3 Request user (UserSerializedImpl eff) (Eff eff Unit)
+type UserSerializedImpl = Fn2 (Nullable Error) (Nullable Json) (Effect Unit)
+type SerializeUserImpl user = Fn3 Request user UserSerializedImpl (Effect Unit)
 
-foreign import _addSerializeUser  :: forall user eff.
-                                  Fn2
-                                    Passport
-                                    (SerializeUserImpl user eff)
-                                    (Eff (passport :: PASSPORT user | eff) Unit)
+foreign import _addSerializeUser  :: forall user. Fn2
+                                      Passport
+                                      (SerializeUserImpl user)
+                                      (Effect Unit)
 
-type SerializeUser user eff=
-  Request -> user -> Aff eff SerializedUser
+type SerializeUser user = Request -> user -> Aff SerializedUser
 
 data SerializedUser
   = SerializedUser (Maybe Json)
   | SerializePass
 
-addSerializeUser  :: forall user eff.
+addSerializeUser  :: forall user.
                   Passport
-                  -> SerializeUser user eff
-                  -> Eff (passport :: PASSPORT user | eff) Unit
+                  -> SerializeUser user
+                  -> Effect Unit
 addSerializeUser passport serialize = do
   let
     curryOnSerialized onSerialized error result =
       runFn2 onSerialized (toNullable error) (toNullable result)
     serialize' req user onSerialized =
-      void $ runAff onError onSuccess $ serialize req user
+      void $ runAff_ (either onError onSuccess) $ serialize req user
       where
-      onError :: Error -> Eff eff Unit
+      onError :: Error -> Effect Unit
       onError error = (curryOnSerialized onSerialized) (Just error) Nothing
-      onSuccess :: SerializedUser -> Eff eff Unit
+      onSuccess :: SerializedUser -> Effect Unit
       onSuccess (SerializedUser result) =
         (curryOnSerialized onSerialized) Nothing result
       onSuccess SerializePass =
@@ -162,39 +150,39 @@ addSerializeUser passport serialize = do
   runFn2 _addSerializeUser passport serialize''
 
 
-type UserDeserializedImpl user eff =
-  Fn2 (Nullable Error) (Nullable user) (Eff eff Unit)
-type DeserializeUserImpl user eff =
-  Fn3 Request Json (UserDeserializedImpl user eff) (Eff eff Unit)
+type UserDeserializedImpl user =
+  Fn2 (Nullable Error) (Nullable user) (Effect Unit)
+type DeserializeUserImpl user =
+  Fn3 Request Json (UserDeserializedImpl user) (Effect Unit)
 
-foreign import _addDeserializeUser  :: forall user eff.
+foreign import _addDeserializeUser  :: forall user.
                                     Fn2
                                       Passport
-                                      (DeserializeUserImpl user eff)
-                                      (Eff (passport :: PASSPORT user | eff) Unit)
+                                      (DeserializeUserImpl user)
+                                      (Effect Unit)
 
-type DeserializeUser user eff =
-  Request -> Json -> Aff eff (DeserializedUser user)
+type DeserializeUser user =
+  Request -> Json -> Aff (DeserializedUser user)
 
 data DeserializedUser user
   = DeserializedUser (Maybe user)
   | DeserializePass
 
-addDeserializeUser  :: forall user eff.
+addDeserializeUser  :: forall user.
                     Passport
-                    -> DeserializeUser user eff
-                    -> Eff (passport :: PASSPORT user | eff) Unit
+                    -> DeserializeUser user
+                    -> Effect Unit
 addDeserializeUser passport deserialize = do
   let
     onDeserialized' onDeserialized error user =
       runFn2 onDeserialized (toNullable error) (toNullable user)
     deserialize' req serialized onDeserialized =
-      void $ runAff onError onSuccess $ deserialize req serialized
+      void $ runAff_ (either onError onSuccess) $ deserialize req serialized
       where
-      onError :: Error -> Eff eff Unit
+      onError :: Error -> Effect Unit
       onError error =
         (onDeserialized' onDeserialized) (Just error) Nothing
-      onSuccess :: DeserializedUser user -> Eff eff Unit
+      onSuccess :: DeserializedUser user -> Effect Unit
       onSuccess (DeserializedUser user) =
         (onDeserialized' onDeserialized) Nothing user
       onSuccess DeserializePass =
@@ -203,16 +191,16 @@ addDeserializeUser passport deserialize = do
   runFn2 _addDeserializeUser passport deserialize''
 
 
-foreign import _authenticate  :: forall user info onAuthEff eff.
+foreign import _authenticate  :: forall user info.
                               Fn4
                                 Passport
                                 String
                                 AuthenticateOptionsImpl
-                                (Nullable (OnAuthenticateImpl user info onAuthEff))
-                                (Fn3 Request Response (ExpressM (passport :: PASSPORT user | eff) Unit) (ExpressM (passport :: PASSPORT user | eff) Unit))
+                                (Nullable (OnAuthenticateImpl user info))
+                                (Fn3 Request Response (Effect Unit) (Effect Unit))
 
-type OnAuthenticateImpl user info eff =
-  Fn4 (Nullable Error) (Nullable user) (Nullable info) (Nullable Number) (Eff eff Unit)
+type OnAuthenticateImpl user info =
+  Fn4 (Nullable Error) (Nullable user) (Nullable info) (Nullable Number) (Effect Unit)
 
 type AuthenticateOptionsImpl =
   { session         :: Boolean
@@ -225,8 +213,8 @@ type AuthenticateOptionsImpl =
   , assignProperty  :: Nullable String
   }
 
-type OnAuthenticate user info eff =
-  Maybe Error -> Maybe user -> Maybe info -> Maybe Number -> Handler eff
+type OnAuthenticate user info =
+  Maybe Error -> Maybe user -> Maybe info -> Maybe Number -> Handler
 
 data AuthenticationMessage
   = AuthenticationMessage String
@@ -256,17 +244,17 @@ authenticateOptions =
   , assignProperty:   Nothing
   }
 
-authenticate  :: forall info user eff.
+authenticate  :: forall info user.
               Passport
               -> String
               -> AuthenticateOptions
-              -> Maybe (OnAuthenticate user info (passport :: PASSPORT user | eff))
-              -> Handler (passport :: PASSPORT user | eff)
+              -> Maybe (OnAuthenticate user info)
+              -> Handler
 authenticate passport strategy options onAuthenticate = HandlerM \req res nxt -> do
   let
-    foreignMessage (AuthenticationMessage msg) = toForeign msg
-    foreignMessage StrategyAuthenticationMessage = toForeign true
-    foreignMessage NoAuthenticationMessage = toForeign $ toNullable Nothing
+    foreignMessage (AuthenticationMessage msg) = unsafeToForeign msg
+    foreignMessage StrategyAuthenticationMessage = unsafeToForeign true
+    foreignMessage NoAuthenticationMessage = unsafeToForeign $ toNullable Nothing
     optionsImpl =
       { session:          options.session
       , successRedirect:  toNullable options.successRedirect
@@ -284,60 +272,60 @@ authenticate passport strategy options onAuthenticate = HandlerM \req res nxt ->
       pure $ mkFn4 $ convertOnAuthenticate cb
     authMiddleware =
       runFn4 _authenticate passport strategy optionsImpl (toNullable onAuthenticateImpl)
-  liftEff $ runFn3 authMiddleware req res nxt
+  liftEffect $ runFn3 authMiddleware req res nxt
   pure unit
 
 
-foreign import _isAuthenticated :: forall eff. Fn1 Request (Eff eff Boolean)
+foreign import _isAuthenticated :: Fn1 Request (Effect Boolean)
 
-isAuthenticated :: forall user eff. HandlerM (passport :: PASSPORT user | eff) Boolean
+isAuthenticated :: HandlerM Boolean
 isAuthenticated = HandlerM \req _ _ -> do
-  authenticated <- liftEff $ runFn1 _isAuthenticated req
+  authenticated <- liftEffect $ runFn1 _isAuthenticated req
   pure authenticated
 
 
-foreign import _logIn :: forall user onLoginEff eff.
+foreign import _logIn :: forall user.
                       Fn4
                         Request
                         user
                         LoginOptions
-                        (Nullable (OnLoginImpl onLoginEff))
-                        (Eff (passport :: PASSPORT user | eff) Unit)
+                        (Nullable OnLoginImpl)
+                        (Effect Unit)
 
-type OnLoginImpl eff = Fn1 (Nullable Error) (Eff eff Unit)
+type OnLoginImpl = Fn1 (Nullable Error) (Effect Unit)
 
-type OnLogin eff = Maybe Error -> Handler eff
+type OnLogin = Maybe Error -> Handler
 
 type LoginOptions = { session :: Boolean }
 
 loginOptions :: LoginOptions
 loginOptions = { session: true }
 
-logIn :: forall user eff.
+logIn :: forall user.
       user
       -> LoginOptions
-      -> Maybe (OnLogin (passport :: PASSPORT user | eff))
-      -> Handler (passport :: PASSPORT user | eff)
+      -> Maybe OnLogin
+      -> Handler
 logIn user options onLogin = HandlerM \req res nxt -> do
   let
     onLoginImpl cb = toNullable $ do
       onLoginCb <- cb
       pure $ \err -> runHandlerM (onLoginCb $ toMaybe err) req res nxt
-  liftEff $ runFn4 _logIn req user options (onLoginImpl onLogin)
+  liftEffect $ runFn4 _logIn req user options (onLoginImpl onLogin)
   pure unit
 
 
-foreign import _logOut :: forall user eff. Fn1 Request (Eff (passport :: PASSPORT user | eff) Unit)
+foreign import _logOut :: Fn1 Request (Effect Unit)
 
-logOut :: forall user eff. HandlerM (passport :: PASSPORT user | eff) Unit
+logOut :: HandlerM Unit
 logOut = HandlerM \req _ _ -> do
-  liftEff $ runFn1 _logOut req
+  liftEffect $ runFn1 _logOut req
   pure unit
 
 
-foreign import _getUser :: forall user eff. Fn1 Request (Eff (passport :: PASSPORT user | eff) (Nullable user))
+foreign import _getUser :: forall user. Fn1 Request (Effect (Nullable user))
 
-getUser :: forall user eff. HandlerM (passport :: PASSPORT user | eff) (Maybe user)
+getUser :: forall user. HandlerM (Maybe user)
 getUser = HandlerM \req _ _ -> do
-  user <- liftEff $ runFn1 _getUser req
+  user <- liftEffect $ runFn1 _getUser req
   pure $ toMaybe user

@@ -5,24 +5,22 @@ module Node.Express.Passport.Strategy.Common
   where
 
 import Prelude
-import Control.Monad.Eff (Eff)
+import Effect (Effect)
 import Data.Function.Uncurried (Fn3, runFn3)
-import Node.Express.Passport.Common (PASSPORT, Passport)
-
+import Node.Express.Passport.Common (Passport)
 
 foreign import data PassportStrategy :: Type
 
-foreign import _setStrategy :: forall user eff.
-                            Fn3
-                              Passport
-                              String
-                              PassportStrategy
-                              (Eff (passport :: PASSPORT user | eff) Unit)
+foreign import _setStrategy :: Fn3
+                                Passport
+                                String
+                                PassportStrategy
+                                (Effect Unit)
 
 
-setStrategy :: forall user eff.
+setStrategy ::
             Passport
             -> String
             -> PassportStrategy
-            -> Eff (passport :: PASSPORT user | eff) Unit
+            -> Effect Unit
 setStrategy = runFn3 _setStrategy

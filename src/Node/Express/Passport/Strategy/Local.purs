@@ -14,8 +14,8 @@ module Node.Express.Passport.Strategy.Local
   where
 
 import Prelude
-import Control.Monad.Eff (Eff)
-import Control.Monad.Eff.Exception (Error)
+import Effect (Effect)
+import Effect.Exception (Error)
 import Data.Function.Uncurried (Fn3, Fn4, runFn3, mkFn4)
 import Data.Maybe (Maybe)
 import Data.Nullable (Nullable, toNullable)
@@ -37,24 +37,24 @@ type Username = String
 type Password = String
 
 
-type CredentialsVerifiedImpl user info eff =
-  Fn3 (Nullable Error) (Nullable user) (Nullable info) (Eff eff Unit)
-type PassportVerifyImpl user info eff =
-  Fn4 Request Username Password (CredentialsVerifiedImpl user info eff) (Eff eff Unit)
+type CredentialsVerifiedImpl user info =
+  Fn3 (Nullable Error) (Nullable user) (Nullable info) (Effect Unit)
+type PassportVerifyImpl user info =
+  Fn4 Request Username Password (CredentialsVerifiedImpl user info) (Effect Unit)
 
-type CredentialsVerified user info eff =
-  Maybe Error -> Maybe user -> Maybe info -> Eff eff Unit
-type PassportVerify user info eff =
-  Request -> Username -> Password -> CredentialsVerified user info eff
-  -> Eff eff Unit
+type CredentialsVerified user info =
+  Maybe Error -> Maybe user -> Maybe info -> Effect Unit
+type PassportVerify user info =
+  Request -> Username -> Password -> CredentialsVerified user info
+  -> Effect Unit
 
-foreign import _passportStrategyLocal :: forall user info eff. PassportStrategyLocalOptions
-                                      -> PassportVerifyImpl user info eff
+foreign import _passportStrategyLocal :: forall user info. PassportStrategyLocalOptions
+                                      -> PassportVerifyImpl user info
                                       -> PassportStrategy
 
-passportStrategyLocal :: forall user info eff.
+passportStrategyLocal :: forall user info.
                       PassportStrategyLocalOptions
-                      -> PassportVerify user info eff
+                      -> PassportVerify user info
                       -> PassportStrategy
 passportStrategyLocal options verify =
   let
@@ -66,7 +66,7 @@ passportStrategyLocal options verify =
   in
   _passportStrategyLocal options verify''
 
-passportStrategyLocal'  :: forall user info eff.
-                        PassportVerify user info eff
+passportStrategyLocal'  :: forall user info.
+                        PassportVerify user info
                         -> PassportStrategy
 passportStrategyLocal' = passportStrategyLocal passportStrategyLocalOptions
